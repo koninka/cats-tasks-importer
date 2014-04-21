@@ -47,6 +47,7 @@ my %tasks = ();
 my %titles = ();
 foreach (glob("$dir/*.zip")) {
    my $zip = $1 if m|$dir/(.*)|;
+   next if $zip ~~ undef;
    rmtree('dir');
    my $ae = Archive::Extract->new(archive => "$dir/$zip")->extract(to => 'dir'); #`unzip -a $dir/$zip -d dir`
    my ($f) = glob('dir/*.xml');
