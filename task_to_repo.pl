@@ -49,18 +49,8 @@ foreach (glob("$dir/*.zip")) {
    my $zip = $1 if m|$dir/(.*)|;
    rmtree('dir');
    my $ae = Archive::Extract->new(archive => "$dir/$zip")->extract(to => 'dir'); #`unzip -a $dir/$zip -d dir`
-   my @f = glob('dir/*.xml');
-   if (scalar(@f) > 1) {
-      print "in $zip is more than one xml file\n";
-      exit 0;
-   } elsif (scalar(@f) == 0) {
-      print "$zip no contains xml file\n";
-      exit 0;
-   }
-   my ($f) = @f;
+   my ($f) = glob('dir/*.xml');
    my $xml = XML::LibXML->new()->parse_file($f);
-   # print $xml->encoding();
-   # my $problem = $xml->getDocumentElement()->getChildrenByTagName("Problem")->item(0);
    my $attributes = $xml->getDocumentElement()->getChildrenByTagName("Problem")->item(0)->attributes();
    my $title = $attributes->getNamedItem('title')->value;
    my $author = $attributes->getNamedItem('author')->value;
@@ -75,10 +65,7 @@ foreach (glob("$dir/*.zip")) {
    foreach (glob('dir/*')){
       copy $_, "$repos_dir/$repo_name";
    }
-   # print Dumper($problem);
    print `stat -c%y $dir/$zip`;
-   # print $title;
-   # print $author;
    last;
    # $task_zip =~ s|problems/||;
    # printf "%s\n", $task_zip;
