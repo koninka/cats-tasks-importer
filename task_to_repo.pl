@@ -1,0 +1,85 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use XML::LibXML;
+use File::Path;
+use File::Copy;
+use Archive::Extract;
+# use XML::LibXML::Common;
+# use XML::NamespaceSupport;
+# use XML::SAX;
+use Data::Dumper;
+use constant {
+   REPOS_DIR    => 'tasks_rep',
+   PROBLEMS_DIR => 'problems'
+};
+
+no if $] >= 5.018, 'warnings', "experimental::smartmatch";
+
+#get vars
+my ($test_mode, $encodeToUTF8) = undef, undef;
+# my $encodeToUTF8 = undef;
+
+foreach (@ARGV) {
+   tr/-//d;
+   $test_mode    = $_ eq 't' if !(defined $test_mode    && $test_mode);
+   $encodeToUTF8 = $_ eq 'e' if !(defined $encodeToUTF8 && $encodeToUTF8);
+}
+printf "test mode started\n"      if $test_mode;
+printf "recoding files enabled\n" if $encodeToUTF8;
+
+rmtree(REPOS_DIR);
+mkdir REPOS_DIR;
+
+#last commit sha1
+#git log -1 --pretty=format:%H
+# stat -c%y pr/problem_0OfMauOjAaOm6X7o3jHWpQoELt9wrn4K.zip | sed 's/^\([0-9\-]*\) \([0-9:]*\).*/\1 \2/'
+
+my @authors = ();
+sub add_author {
+   push @authors, $_[0] unless ($_[0] ~~ @authors)
+}
+
+my $dir = PROBLEMS_DIR;
+my $repos_dir = REPOS_DIR;
+my %tasks = ();
+my %titles = ();
+foreach (glob("$dir/*.zip")) {
+   my $zip = $1 if m|$dir/(.*)|;
+   rmtree('dir');
+   my $ae = Archive::Extract->new(archive => "$dir/$zip")->extract(to => 'dir'); #`unzip -a $dir/$zip -d dir`
+   my @f = glob('dir/*.xml');
+   if (scalar(@f) > 1) {
+      print "in $zip is more than one xml file\n";
+      exit 0;
+   } elsif (scalar(@f) == 0) {
+      print "$zip no contains xml file\n";
+      exit 0;
+   }
+   my ($f) = @f;
+   my $xml = XML::LibXML->new()->parse_file($f);
+   # print $xml->encoding();
+   # my $problem = $xml->getDocumentElement()->getChildrenByTagName("Problem")->item(0);
+   my $attributes = $xml->getDocumentElement()->getChildrenByTagName("Problem")->item(0)->attributes();
+   my $title = $attributes->getNamedItem('title')->value;
+   my $author = $attributes->getNamedItem('author')->value;
+   add_author($author);
+   my $repo_name;
+   if (exists($titles{$title})) {
+      $repo_name = $titles{$title};
+   } else {
+      $titles{$title} = $repo_name = $1 if $f =~ m|dir/(.*).xml|;
+      mkdir "$repos_dir/$repo_name";
+   }
+   foreach (glob('dir/*')){
+      copy $_, "$repos_dir/$repo_name";
+   }
+   # print Dumper($problem);
+   print `stat -c%y $dir/$zip`;
+   # print $title;
+   # print $author;
+   last;
+   # $task_zip =~ s|problems/||;
+   # printf "%s\n", $task_zip;
+}
