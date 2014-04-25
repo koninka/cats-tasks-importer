@@ -17,23 +17,26 @@ use constant {
    TMP_ZIP        => 'tmp_zip.zip',
    REPOS_DIR      => 'tasks_rep',
    TMP_ZIP_DIR    => 'dir',
-   PROBLEMS_DIR   => 'problems',
+   PROBLEMS_DIR   => 'prs',
    DEFAULT_AUTHOR => 'unknown'
 };
+
+Archive::Zip::setErrorHandler(sub {});
 
 no if $] >= 5.018, 'warnings', "experimental::smartmatch";
 
 #get vars
-my ($test_mode, $encodeToUTF8) = undef, undef;
-# my $encodeToUTF8 = undef;
+my ($debug, $encodeToUTF8, $needAuthorTable) = undef, undef, undef;
 
 foreach (@ARGV) {
    tr/-//d;
-   $test_mode    = $_ eq 't' if !(defined $test_mode    && $test_mode);
-   $encodeToUTF8 = $_ eq 'e' if !(defined $encodeToUTF8 && $encodeToUTF8);
+   $debug       = $_ eq 't' if !(defined $debug       && $debug);
+   $encodeToUTF8    = $_ eq 'e' if !(defined $encodeToUTF8    && $encodeToUTF8);
+   $needAuthorTable = $_ eq 'a' if !(defined $needAuthorTable && $needAuthorTable);
 }
-printf "test mode started\n"      if $test_mode;
-printf "recoding files enabled\n" if $encodeToUTF8;
+printf "debug started\n"                    if $debug;
+printf "recoding files enabled\n"               if $encodeToUTF8;
+printf "parse authors to authors.txt started\n" if $needAuthorTable;
 
 rmtree(REPOS_DIR);
 mkdir REPOS_DIR;
@@ -44,36 +47,116 @@ mkdir REPOS_DIR;
 
 my @authors = ();
 sub add_author {
-   push @authors, $_[0] unless ($_[0] ~~ @authors)
+   if ($_[0] ne "" || $_[0] ne DEFAULT_AUTHOR) {
+      push @authors, $_[0] unless ($_[0] ~~ @authors)
+   }
+}
+
+sub extract_zip {
+   my $zip = Archive::Zip->new();
+   $zip->read($_[0]) == AZ_OK or error("can't read");
+   my @xml_members = $zip->membersMatching('.*\.xml$');
+   error('*.xml not found') if !@xml_members;
+   error('found several *.xml in archive') if @xml_members > 1;
+   $zip->extractTree('', 'dir/') == AZ_OK or error("can't extract");
+}
+
+my $error;
+sub error {
+   $error = $_[0];
+   die;
 }
 
 my $dir = PROBLEMS_DIR;
+my $tmp_zip = TMP_ZIP;
+my $tmp_dir = TMP_ZIP_DIR;
 my $repos_dir = REPOS_DIR;
 my %tasks = ();
 my %titles = ();
+my @failed_zips = ();
+
 foreach (glob("$dir/*.zip")) {
-   my $zip = $1 if m|$dir/(.*)|;
-   next if $zip ~~ undef;
-   rmtree('dir');
-   my $ae = Archive::Extract->new(archive => "$dir/$zip")->extract(to => 'dir'); #`unzip -a $dir/$zip -d dir`
-   my ($f) = glob('dir/*.xml');
-   my $xml = XML::LibXML->new()->parse_file($f);
-   my $attributes = $xml->getDocumentElement()->getChildrenByTagName("Problem")->item(0)->attributes();
-   my $title = $attributes->getNamedItem('title')->value;
-   my $author = $attributes->getNamedItem('author')->value;
-   add_author($author);
-   my $repo_name;
-   if (exists($titles{$title})) {
-      $repo_name = $titles{$title};
+   my $zip_name = $1 if m|$dir/(.*)|;
+   next if $zip_name ~~ undef;
+   print "zip = $zip_name, \n" if $debug;
+   rmtree(TMP_ZIP_DIR);
+   eval {
+      eval {
+         extract_zip("$dir/$zip_name");
+      };
+      if ($@) {
+         unlink $tmp_zip;
+         `echo "y" | zip -F $dir/$zip_name --out $tmp_zip`;
+         extract_zip($tmp_zip);
+      }
+      my ($f) = glob('dir/*.xml');
+      my $xml = XML::LibXML->new()->parse_file($f);
+      my $attributes = $xml->getDocumentElement()->getChildrenByTagName("Problem")->item(0)->attributes();
+      my $title = $attributes->getNamedItem('title')->value if defined $attributes->getNamedItem('title');
+      my $author = $attributes->getNamedItem('author')->value if defined $attributes->getNamedItem('author');
+      $author = DEFAULT_AUTHOR if $author ~~ undef || $author eq "";
+      utf8::encode($author);
+      add_author($author);
+      # if (!$needAuthorTable) {
+      #    my $repo_path;
+      #    if (exists($titles{$title})) {
+      #       $repo_path = $titles{$title};
+      #    } else {
+      #       $titles{$title} = $repo_path = "$repos_dir/$1" if $f =~ m|dir/(.*).xml|;
+      #       mkdir $repo_path;
+      #       Git::Repository->run(init => $repo_path);
+      #    }
+      #    print "author = $author\n" if $test_mode;
+      #    my $repo = Git::Repository->new(
+      #       work_tree => $repo_path,
+      #       {
+      #          env => {
+      #             GIT_AUTHOR_NAME  => $author,
+      #             GIT_AUTHOR_EMAIL => 'some@mail.ru'
+      #          }
+      #       }
+      #    );
+      #    foreach (glob('dir/*')){
+      #       copy $_, $repo_path;
+      #    }
+      #    $repo->run(add => '.');
+      #    $repo->run(commit => '-m', 'Initial commit', sprintf("--date=%s", stat("$dir/$zip_name")->mtime));
+      # }
+      #===================================================
+      # print scalar localtime stat("$dir/$zip_name")->mtime;
+      # print "\n";
+      # print `stat -c%y $dir/$zip_name`;
+      # print "\n";
+      # last;
+      # $task_zip =~ s|problems/||;
+      # printf "%s\n", $task_zip;
+   };
+   if ($@) {
+      push @failed_zips, {zip => $zip_name, msg => $error};
+   }
+}
+
+sub print_res {
+   if (scalar @{$_[1]} > 0) {
+      $, = "\n";
+      print "=======$_[0]=======\n";
+      print @{$_[1]};
+      print "\n";
    } else {
-      $titles{$title} = $repo_name = $1 if $f =~ m|dir/(.*).xml|;
-      mkdir "$repos_dir/$repo_name";
+      print "$_[0] is empty\n";
    }
-   foreach (glob('dir/*')){
-      copy $_, "$repos_dir/$repo_name";
-   }
-   print `stat -c%y $dir/$zip`;
-   last;
-   # $task_zip =~ s|problems/||;
-   # printf "%s\n", $task_zip;
+}
+
+@authors = sort @authors;
+print_res("authors name", \@authors);
+
+open FILE, ">authors.txt" or die $!;
+foreach (@authors) {
+   print FILE "$_\n";
+}
+close FILE;
+
+print "=======failed zips=======\n";
+foreach (@failed_zips) {
+   print "$_->{zip} - $_->{msg}\n";
 }
