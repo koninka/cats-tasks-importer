@@ -14,8 +14,11 @@ use Archive::Zip qw( :ERROR_CODES );
 # use XML::SAX;
 use Data::Dumper;
 use constant {
-   REPOS_DIR    => 'tasks_rep',
-   PROBLEMS_DIR => 'problems'
+   TMP_ZIP        => 'tmp_zip.zip',
+   REPOS_DIR      => 'tasks_rep',
+   TMP_ZIP_DIR    => 'dir',
+   PROBLEMS_DIR   => 'problems',
+   DEFAULT_AUTHOR => 'unknown'
 };
 
 no if $] >= 5.018, 'warnings', "experimental::smartmatch";
