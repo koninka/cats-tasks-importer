@@ -2,10 +2,13 @@
 
 use strict;
 use warnings;
-use XML::LibXML;
+# use diagnostics;
 use File::Path;
 use File::Copy;
-use Archive::Extract;
+use File::stat;
+use XML::LibXML;
+use Git::Repository;
+use Archive::Zip qw( :ERROR_CODES );
 # use XML::LibXML::Common;
 # use XML::NamespaceSupport;
 # use XML::SAX;
