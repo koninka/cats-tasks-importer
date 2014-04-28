@@ -75,9 +75,14 @@ my %tasks = ();
 my %titles = ();
 my @failed_zips = ();
 
-foreach (glob("$dir/*.zip")) {
-   my $zip_name = $1 if m|$dir/(.*)|;
-   next if $zip_name ~~ undef;
+my %files = map {m|$dir/(.*)|; $1 => stat($_)->mtime} glob("$dir/*.zip");
+my @files = sort{$files{$a} <=> $files{$b}} keys %files;
+
+# foreach my $keys (sort{$files{$a} <=> $files{$b}} keys %files) {
+#    print "$keys\t", scalar localtime($files{$keys}), "\n";
+# }
+
+foreach my $zip_name (@files) {
    print "zip = $zip_name, \n" if $debug;
    rmtree(TMP_ZIP_DIR);
    eval {
