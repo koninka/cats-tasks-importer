@@ -1,13 +1,6 @@
-use constant {
-   KLENINS_EMAIL   => 'klenin@gmail.com',
-   DEFAULT_EMAIL   => 'unknown@example.com',
-   DEFAULT_AUTHOR  => 'Unknown Author',
-   EXTERNAL_AUTHOR => 'external'
-};
+#!/usr/bin/perl
 
-sub eccccho {
-   print "echo\n";
-}
+BEGIN { require "utils.pl"; }
 
 sub make_author_info {
    my $h = {@_};

@@ -1,5 +1,10 @@
 #!/usr/bin/perl
 
+BEGIN {
+   require "utils.pl";
+   require "authors.pl";
+}
+
 use strict;
 use warnings;
 # use diagnostics;
