@@ -65,7 +65,7 @@ foreach my $zip (@files) {
          $sth->bind_param(1, new_id);
          $sth->bind_param(2, $title);
          $sth->execute;
-         if ($title eq 'Космос для школьников') {
+         if ($title eq 'Космос для школьников' || $title eq "Testlib. Pascal: 1.9; C/C++: 0.3.3, 0.4.3;" || $title eq "New Pasal and C Testlibs: nums") {
             $sth->bind_param(1, new_id);
             $sth->bind_param(2, $title);
             $sth->execute;
