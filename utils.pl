@@ -33,17 +33,26 @@ sub get_error {
    return $error;
 }
 
-my @failed_zips = ();
+my %failed_zips = ();
 
 sub add_failed_zip {
-   push @failed_zips, {zip => $_[0], msg => $error};
+   $failed_zips{$_[0]} = $error;
+}
+
+sub exist_failed_zip {
+   return exists $failed_zips{$_[0]};
 }
 
 sub print_failed_zips {
    print "=======failed zips=======\n" if @failed_zips > 1;
-   foreach (@failed_zips) {
-      print " $_->{zip} - $_->{msg}\n";
+   foreach (keys %failed_zips) {
+      utf8::encode($failed_zips{$_});
+      print " $_ - $failed_zips{$_}\n";
    }
+}
+
+sub get_failed_amount {
+   return scalar keys %failed_zips;
 }
 
 1;
