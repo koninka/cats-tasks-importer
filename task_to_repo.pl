@@ -37,14 +37,6 @@ my %keys;
 my $DEBUG =  exists $keys{'-t'};
 my $needAuthorTable = exists $keys{'-a'};
 
-# foreach (@ARGV) {
-#    tr/-//d;
-#    $DEBUG           = $_ eq 't' if !(defined $DEBUG           && $DEBUG);
-#    $needLog         = $_ eq 'a' if !(defined $needLog         && $needLog);
-#    $encodeToUTF8    = $_ eq 'e' if !(defined $encodeToUTF8    && $encodeToUTF8);
-#    $proceedHandle   = $_ eq 'p' if !(defined $proceedHandle   && $proceedHandle);
-#    $needAuthorTable = $_ eq 'a' if !(defined $needAuthorTable && $needAuthorTable);
-# }
 printf "DEBUG STARTED\n"                        if $DEBUG;
 printf "PARSE AUTHORS TO authors.txt STARDER\n" if $needAuthorTable;
 
@@ -138,7 +130,7 @@ sub add_start_v {
 
 sub get_leaf {
    (my $zip) = @_;
-   $zip = $edges{$zip}{zip} while exists $edges{$zip}{zip};
+   $zip = $edges{$zip}{zip} while exists $edges{$zip};
    return $zip;
 }
 
@@ -147,15 +139,6 @@ sub good_add_edge {
    my $idx;
    for (my $i = 0; $i < @{$sha_zip{$sha1}}; $i++) {
       my $leaf = get_leaf($sha_zip{$sha1}[$i]);
-      my $isExist = 0;
-      if ($sha1 ne $sha2) {
-         my $tmp_sha = $sha1;
-         while (!$isExist && exists $reverse_renamings{$tmp_sha}) {
-            $tmp_sha = $reverse_renamings{$tmp_sha};
-            $isExist = $sha2 eq $tmp_sha;
-         }
-      }
-      next if $isExist;
       if ($zip_sha{$leaf} eq $sha1) {
          $edges{$leaf} = {zip => $zip, title => $sha2};
          $idx = $i;
@@ -163,9 +146,7 @@ sub good_add_edge {
       }
    }
    $sha_zip{$sha1}[$idx] = $zip if $sha1 eq $sha2 && defined $idx;
-   if ($sha1 ne $sha2 && defined $idx) {
-      $reverse_renamings{$sha2} = $sha1 if !exists $reverse_renamings{$sha2};
-   }
+   $reverse_renamings{$sha2} = $sha1 if $sha1 ne $sha2 && defined $idx && !exists $reverse_renamings{$sha2};
    add_start_v($zip, $sha2) if $idx ~~ undef;
    $zip_sha{$zip} = $sha2;
 }
@@ -207,7 +188,10 @@ foreach my $zip (@zip_files) {
          my @log = $xml_repo->run(log => '--diff-filter=C', '-C', "-C@{[SIMILARITY_INDEX]}%", '--summary', '--format="% "', '-1');
          my ($tmp_str) = @log = grep {/^ copy/} @log;
          my ($desc) = map {m/^\s+copy (.*)\.xml => (.*)\.xml \(([0-9]+)%\)/; {old_name => $1, new_name => $2}} @log;
-         if (defined $desc && -e XMLS_DIR . "/$desc->{old_name}.xml") {
+         my $isExist = 0;
+         my $tmp_sha = defined $desc ? $desc->{old_name} : '-';
+         $isExist = $desc->{new_name} eq ($tmp_sha = $reverse_renamings{$tmp_sha}) while !$isExist && exists $reverse_renamings{$tmp_sha};
+         if (defined $desc && -e XMLS_DIR . "/$desc->{old_name}.xml" && !$isExist) {
             $xml_repo->run(rm => "$desc->{old_name}.xml");
             $xml_repo->run(commit => '-m', "delete old version of '$title'");
             if ($desc->{new_name} ne $sha1) {
@@ -224,7 +208,6 @@ foreach my $zip (@zip_files) {
    add_failed_zip($zip) if $@;
    rmtree TMP_ZIP_DIR;
 }
-
 print_failed_zips;
 
 #-----------------------------------------------------------------
@@ -254,6 +237,7 @@ sub set_id {
    my $has_error = 0;
    $desc->{res_id} = $desc->{own_id} = undef;
    $desc->{err} = [];
+   # print Dumper($desc);
    if (exists $tasks{$desc->{title}}) {
       $used_titles{$desc->{title}} = 1;
       $amount++;
@@ -261,8 +245,8 @@ sub set_id {
       push @{$desc->{err}}, 1 if $has_error; #"There is more than one id for $desc->{zip}"
       $desc->{own_id} = $tasks{$desc->{title}}->[0];
    } elsif (!exists $edges{$desc->{zip}}) {
-      $has_error = $amount > 0;
-      push @{$desc->{err}}, 4 if $has_error; #нету айди для последней задачи в цепочке
+      $has_error = 1;
+      push @{$desc->{err}}, 4; #нету айди для последней задачи в цепочке
    }
    if (!exists $edges{$desc->{zip}}) {
       $desc->{res_id} = $desc->{own_id};
@@ -313,29 +297,29 @@ foreach my $k (keys %tasks) {
    next if exists $used_titles{$k};
    print "ERROR: No corresponding archive for id $_\n" foreach @{$tasks{$k}};
 }
-print Dumper(@start_v);
-print "\n\n\n";
+# print Dumper(@start_v);
+# print "\n\n\n";
 # print Dumper %edges;
 # print "\n\n\n";
 # print Dumper %tasks;
 
-# print "\nZIP CHAINS\n";
-# my $amount = 0;
-# foreach (@start_v) {
-#    print "$_->{zip}";
-#    $amount++;
-#    my $zip = $_->{zip};
-#    while (exists $edges{$zip}) {
-#       print " => ";
-#       $zip = $edges{$zip}{zip};
-#       print "$zip";
-#       $amount++;
-#    }
-#    print "\n";
-# }
+print "\nZIP CHAINS\n";
+my $amount = 0;
+foreach (@start_v) {
+   print "$_->{zip}";
+   $amount++;
+   my $zip = $_->{zip};
+   while (exists $edges{$zip}) {
+      print " => ";
+      $zip = $edges{$zip}{zip};
+      print "$zip";
+      $amount++;
+   }
+   print "\n";
+}
 
-# print "\nAMOUNT = " . $amount;
-# print "\n";
+print "\nAMOUNT = " . $amount;
+print "\n";
 
 exit;
 
