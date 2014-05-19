@@ -41,6 +41,7 @@ printf "DEBUG STARTED\n"                        if $DEBUG;
 printf "PARSE AUTHORS TO authors.txt STARDER\n" if $needAuthorTable;
 
 rmtree XMLS_DIR;
+rmtree REPOS_DIR;
 rmtree TMP_ZIP_DIR;
 unlink TMP_ZIP;
 
@@ -303,112 +304,53 @@ foreach my $k (keys %tasks) {
 # print "\n\n\n";
 # print Dumper %tasks;
 
-print "\nZIP CHAINS\n";
-my $amount = 0;
-foreach (@start_v) {
-   print "$_->{zip}";
-   $amount++;
-   my $zip = $_->{zip};
-   while (exists $edges{$zip}) {
-      print " => ";
-      $zip = $edges{$zip}{zip};
-      print "$zip";
-      $amount++;
-   }
-   print "\n";
-}
+# print "\nZIP CHAINS\n";
+# my $amount = 0;
+# foreach (@start_v) {
+#    print "$_->{zip}";
+#    $amount++;
+#    my $zip = $_->{zip};
+#    while (exists $edges{$zip}) {
+#       print " => ";
+#       $zip = $edges{$zip}{zip};
+#       print "$zip";
+#       $amount++;
+#    }
+#    print "\n";
+# }
 
-print "\nAMOUNT = " . $amount;
-print "\n";
-
-exit;
-
-$, = "\n";
-print "=================\n";
-print %reverse_renamings;
-print "\n=================\n\n";
-
-# exit;
-
-my @log = $xml_repo->run(log => '--diff-filter=C', '-C', "-C@{[SIMILARITY_INDEX]}%", '--summary', '--format="% "');
-@log = reverse map {m/([0-9]+)\.xml => ([0-9]+)\.xml \(([0-9]+)%\)/; {old_name => $1, new_name => $2, sidx => $3}} grep {/^ copy/} @log;
-
-my %renamings = ();    #choose from several alternatives that renaming which has the highest similarity index
-for my $i (0..$#log) {
-   my $h = $log[$i];
-   for my $j ($i+1..$#log) {
-      if (($log[$i]->{old_name} eq $log[$j]->{old_name}) && ($log[$i]->{sidx} < $log[$j]->{sidx})) {
-         $h = $log[$j];
-         $log[$i] = $log[$j];
-      }
-   }
-   $renamings{$h->{new_name}} = $h->{old_name};
-}
-
-if ($DEBUG) {
-   print "$_ <= $renamings{$_}\n" foreach keys %renamings;
-}
-
-my @base_tasks_to_be_renamed = ();
-foreach (keys %renamings) {
-   $_ = $renamings{$_} while defined $renamings{$_};
-   next if $_ ~~ @base_tasks_to_be_renamed;
-   push @base_tasks_to_be_renamed, $_;
-}
+# print "\nAMOUNT = " . $amount;
+# print "\n";
 
 #-----------------------------------------------------------------
 #------------------REPOSITORY CREATION FOR TASKS------------------
 #-----------------------------------------------------------------
 REPOSITORY_CREATION:
 mkdir REPOS_DIR if !$needAuthorTable;
-my @reps = ();
-my @renamed_tasks = ();
-foreach my $zip (@zip_files) {
-   my $zip_path = PROBLEMS_DIR . "/$zip";
-   # print "handle $zip\n" if $DEBUG;
-   # eval {
-      eval {
-         extract_zip($zip_path);
-      };
-      if ($@) {
-         `echo "y" | zip -F $zip_path --out @{[TMP_ZIP]}`;
-         extract_zip(TMP_ZIP);
-         unlink TMP_ZIP;
-      }
+foreach my $root (@start_v) {
+   next if !defined $root->{res_id};
+   my $repo_path = "@{[REPOS_DIR]}/$root->{res_id}";
+   my $v = $root;
+   my $prev_title;
+   mkdir $repo_path;
+   Git::Repository->run(init => $repo_path);
+   do {
+      my $zip_path = PROBLEMS_DIR . "/$v->{zip}";
+      extract_zip($zip_path);
       my ($xml_file) = glob(TMP_ZIP_DIR . '/*.xml');
-      my ($el) = XML::LibXML->load_xml(location => $xml_file)->getDocumentElement()->getElementsByTagName('Problem');
+      my $xml;
+      eval { $xml = XML::LibXML->load_xml(location => $xml_file); };
+      error('corrupt xml file') if $@;
+      my ($el) = $xml->getDocumentElement()->getElementsByTagName('Problem');
       my $title = $el->getAttribute('title');
-      # utf8::encode($title);
+      utf8::encode($title);
       $_ = $el->getAttribute('author') if defined $el->getAttribute('author');
       $_ = DEFAULT_AUTHOR if $_ ~~ undef || $_ eq '';
-      # utf8::encode($_);
-      add_author($_);
+      utf8::encode($_);
       $_ = (split ',')[0];
       s/\(.*\)//;
       s/^\s*(.*?)\s*$/$1/;
       my $author = $_;
-      goto END_EVAL if $needAuthorTable || !(exists $titles_id{$title} && defined $titles_id{$title});
-      my $task_id = $titles_id{$title};
-      my $repo_path = "@{[REPOS_DIR]}/$task_id";
-      my $commit_msg = 'Change task';
-      my $xml_id = $task_id;
-      my $already_has_rep = 0;
-      if (exists $renamings{$task_id}) {
-         $already_has_rep = 1;
-         unless ($task_id ~~ @renamed_tasks) {
-            push @renamed_tasks, $task_id;
-            $commit_msg = "Rename task from '$id_titles{$renamings{$task_id}}' to '$id_titles{$task_id}'";
-         }
-         $task_id = $renamings{$task_id} while defined $renamings{$task_id};
-         $repo_path = "@{[REPOS_DIR]}/$task_id";
-      } elsif ($task_id ~~ @reps) {
-         $already_has_rep = $task_id ~~ @base_tasks_to_be_renamed;
-      } else {
-         $commit_msg = 'Initial commit';
-         push @reps, $task_id;
-         mkdir $repo_path;
-         Git::Repository->run(init => $repo_path);
-      }
       my $repo = Git::Repository->new(
          work_tree => $repo_path,
          {
@@ -426,29 +368,15 @@ foreach my $zip (@zip_files) {
          }
       );
       $repo->run(rm => '*', '--ignore-unmatch');
-      # $repo->run(rm => '*.xml') if $already_has_rep;
-      foreach (glob(TMP_ZIP_DIR . '/*')) {
-         # if ($_ eq $xml_file) {
-            # copy $_, "$repo_path/${xml_id}.xml";
-         # } else {
-            copy $_, $repo_path;
-         # }
-      }
+      copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '/*');
+      my $commit_msg = !defined $prev_title ? 'Initial commit' : ($prev_title ne $v->{title} ? "Rename task to '$title'": 'Change task');
       $repo->run(add => '-A');
       $repo->run(commit => '-m', $commit_msg, sprintf('--date=%s', stat($zip_path)->mtime));
-      END_EVAL:
-   # };
-   if ($@) {
-      print "$@\n";
-      add_failed_zip($zip);
-   } else {
+      $prev_title = $v->{title};
       rmtree TMP_ZIP_DIR;
-   }
+      $v = $edges{$v->{zip}};
+   } while (defined $v);
 }
-
-# foreach (@authors) {
-#    print "true - $_\n" if utf8::is_utf8($_);
-# }
 
 if ($needAuthorTable) {
    open FILE, '>authors.txt' or die $!;
