@@ -12,6 +12,7 @@ use CATS::DB;
 use File::Path;
 use File::Copy;
 use File::stat;
+use File::Touch;
 use XML::LibXML;
 use Digest::SHA qw(sha1_hex);
 use Git::Repository;
@@ -334,7 +335,7 @@ REPOSITORY_CREATION:
 mkdir REPOS_DIR if !$needAuthorTable;
 foreach my $root (@start_v) {
    next if !defined $root->{res_id};
-   my $repo_path = REPOS_DIR . $root->{res_id};
+   my $repo_path = REPOS_DIR . $root->{res_id} . '/';
    my $v = $root;
    my $prev_title;
    mkdir $repo_path;
@@ -374,10 +375,12 @@ foreach my $root (@start_v) {
       );
       $repo->run(rm => '*', '--ignore-unmatch');
       copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '*');
+      my $mtime = stat($zip_path)->mtime;
+      File::Touch->new(mtime => $mtime)->touch((glob($repo_path . '*'), $repo_path));
       my $commit_msg = !defined $prev_title ? 'Initial commit' : ($prev_title ne $v->{title} ? "Rename task to '$title'": 'Change task');
       $commit_msg .= ", zip - $v->{zip}" if $DEBUG;
       $repo->run(add => '-A');
-      $repo->run(commit => '-m', $commit_msg, sprintf("--date='%s +1100'", stat($zip_path)->mtime));
+      $repo->run(commit => '-m', $commit_msg, sprintf("--date='%s +1100'", $mtime));
       $prev_title = $v->{title};
       rmtree TMP_ZIP_DIR;
       $v = $edges{$v->{zip}};
