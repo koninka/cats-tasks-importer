@@ -63,7 +63,7 @@ sub extract_zip {
    my @xml_members = $zip->membersMatching('.*\.xml$');
    error('*.xml not found') if !@xml_members;
    error('found several *.xml in archive') if @xml_members > 1;
-   $zip->extractTree('', TMP_ZIP_DIR . '/') == AZ_OK or error("can't extract");
+   $zip->extractTree('', TMP_ZIP_DIR) == AZ_OK or error("can't extract");
 }
 
 my %titles_id = ();
@@ -168,7 +168,7 @@ foreach my $zip (@zip_files) {
    my $zip_path = PROBLEMS_DIR . $zip;
    eval {
       extract_zip($zip_path);
-      my ($xml_file) = glob(TMP_ZIP_DIR . '/*.xml');
+      my ($xml_file) = glob(TMP_ZIP_DIR . '*.xml');
       my $xml;
       eval { $xml = XML::LibXML->load_xml(location => $xml_file); };
       error('corrupt xml file') if $@;
@@ -185,7 +185,7 @@ foreach my $zip (@zip_files) {
       } else {
          copy $xml_file, XMLS_DIR . "$sha1.xml";
          $xml_repo->run(add => '.');
-         $xml_repo->run(commit => '-m', "add '$title', zip - $zip");
+         $xml_repo->run(commit => '-m', "add '$title'" . ($DEBUG ? ", zip - $zip" : ''));
          my @log = $xml_repo->run(log => '--diff-filter=C', '-C', "-C@{[SIMILARITY_INDEX]}%", '--summary', '--format="% "', '-1');
          my ($tmp_str) = @log = grep {/^ copy/} @log;
          my ($desc) = map {m/^\s+copy (.*)\.xml => (.*)\.xml \(([0-9]+)%\)/; {old_name => $1, new_name => $2}} @log;
@@ -342,7 +342,7 @@ foreach my $root (@start_v) {
    do {
       my $zip_path = PROBLEMS_DIR . $v->{zip};
       extract_zip($zip_path);
-      my ($xml_file) = glob(TMP_ZIP_DIR . '/*.xml');
+      my ($xml_file) = glob(TMP_ZIP_DIR . '*.xml');
       my $xml;
       eval { $xml = XML::LibXML->load_xml(location => $xml_file); };
       error('corrupt xml file') if $@;
@@ -375,6 +375,7 @@ foreach my $root (@start_v) {
       $repo->run(rm => '*', '--ignore-unmatch');
       copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '*');
       my $commit_msg = !defined $prev_title ? 'Initial commit' : ($prev_title ne $v->{title} ? "Rename task to '$title'": 'Change task');
+      $commit_msg .= ", zip - $v->{zip}" if $DEBUG;
       $repo->run(add => '-A');
       $repo->run(commit => '-m', $commit_msg, sprintf("--date='%s +1100'", stat($zip_path)->mtime));
       $prev_title = $v->{title};
