@@ -371,7 +371,7 @@ foreach my $root (@start_v) {
       copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '/*');
       my $commit_msg = !defined $prev_title ? 'Initial commit' : ($prev_title ne $v->{title} ? "Rename task to '$title'": 'Change task');
       $repo->run(add => '-A');
-      $repo->run(commit => '-m', $commit_msg, sprintf('--date=%s', stat($zip_path)->mtime));
+      $repo->run(commit => '-m', $commit_msg, sprintf("--date='%s +1100'", stat($zip_path)->mtime));
       $prev_title = $v->{title};
       rmtree TMP_ZIP_DIR;
       $v = $edges{$v->{zip}};
