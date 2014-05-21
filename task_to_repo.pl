@@ -217,14 +217,16 @@ print_failed_zips;
 CATS::DB::sql_connect;
 my $ary_ref = $dbh->selectall_arrayref('SELECT id, title FROM problems ORDER BY id');
 my %tasks = ();
+my %titles = ();
 foreach (@$ary_ref) {
    my ($id, $title) = @$_;
    utf8::encode($title);
-   $title = sha1_hex($title);
-   if (defined $tasks{$title} && @{$tasks{$title}} > 0) {
-      push @{$tasks{$title}}, $id;
+   my $sha_title = sha1_hex($title);
+   $titles{$sha_title} = $title;
+   if (defined $tasks{$sha_title} && @{$tasks{$sha_title}} > 0) {
+      push @{$tasks{$sha_title}}, $id;
    } else {
-      $tasks{$title} = [$id];
+      $tasks{$sha_title} = [$id];
    }
 }
 
@@ -267,6 +269,7 @@ foreach (@start_v) {
    my @errors = ();
    my $lv = $_;
    my $chain = $lv->{zip};
+   my $titles_chain = "'$titles{$lv->{title}}'";
    my $other_ids = $_->{own_id};
    while (exists $edges{$lv->{zip}}) {
       push @errors, "ERROR: There is more than one id for $lv->{zip}" if 1 ~~ @{$lv->{err}};
@@ -274,6 +277,7 @@ foreach (@start_v) {
       $lv = $edges{$lv->{zip}};
       $other_ids .= " $lv->{own_id}" if defined $lv->{own_id} && ($lv->{own_id} != $res_id);
       $chain .= " => $lv->{zip}";
+      $titles_chain .= " => '$titles{$lv->{title}}'";
    }
    foreach my $err (@{$lv->{err}}) {
       my $err_str;
@@ -290,6 +294,7 @@ foreach (@start_v) {
    }
    $, = "\n";
    print ERROR_V_DEL . "\nCHAIN: $chain\n";
+   print "TITLE CHAIN: $titles_chain\n";
    print @errors;
    print "\n@{[ERROR_V_DEL]}\n";
 }
