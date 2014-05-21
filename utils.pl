@@ -12,10 +12,10 @@ use constant {
 use constant {
    CATS_DB          => '../../web/cats-main/cgi-bin',
    TMP_ZIP          => 'tmp_zip.zip',
-   XMLS_DIR         => 'task_xmls',
-   REPOS_DIR        => 'tasks_rep',
-   TMP_ZIP_DIR      => 'dir',
-   PROBLEMS_DIR     => 'prs',
+   XMLS_DIR         => 'tasks_xmls/',
+   REPOS_DIR        => 'tasks_rep/',
+   TMP_ZIP_DIR      => 'dir/',
+   PROBLEMS_DIR     => 'prs/',
    SIMILARITY_INDEX => 80
 };
 

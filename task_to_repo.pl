@@ -69,7 +69,7 @@ sub extract_zip {
 my %titles_id = ();
 my %id_titles = ();
 
-my %zip_files = map {m|@{[PROBLEMS_DIR]}/(.*)|; $1 => stat($_)->mtime} glob(PROBLEMS_DIR . '/*.zip');
+my %zip_files = map {m|@{[PROBLEMS_DIR]}(.*)|; $1 => stat($_)->mtime} glob(PROBLEMS_DIR . '*.zip');
 my @zip_files = sort{$zip_files{$a} <=> $zip_files{$b}} keys %zip_files;
 
 #-----------------------------------------------------------------
@@ -165,7 +165,7 @@ my $xml_repo = Git::Repository->new(
 );
 foreach my $zip (@zip_files) {
    next if exist_failed_zip($zip);
-   my $zip_path = PROBLEMS_DIR . "/$zip";
+   my $zip_path = PROBLEMS_DIR . $zip;
    eval {
       extract_zip($zip_path);
       my ($xml_file) = glob(TMP_ZIP_DIR . '/*.xml');
@@ -177,13 +177,13 @@ foreach my $zip (@zip_files) {
       utf8::encode($title);
       # my $sha1 = $title;
       my $sha1 = sha1_hex($title);
-      if (-e XMLS_DIR . "/$sha1.xml") {
-         copy $xml_file, XMLS_DIR . "/$sha1.xml";
+      if (-e XMLS_DIR . "$sha1.xml") {
+         copy $xml_file, XMLS_DIR . "$sha1.xml";
          $xml_repo->run(add => '.');
          $xml_repo->run(commit => '-m', "update '$title', zip - $zip");
          good_add_edge($zip, $sha1, $sha1);
       } else {
-         copy $xml_file, XMLS_DIR . "/$sha1.xml";
+         copy $xml_file, XMLS_DIR . "$sha1.xml";
          $xml_repo->run(add => '.');
          $xml_repo->run(commit => '-m', "add '$title', zip - $zip");
          my @log = $xml_repo->run(log => '--diff-filter=C', '-C', "-C@{[SIMILARITY_INDEX]}%", '--summary', '--format="% "', '-1');
@@ -192,7 +192,7 @@ foreach my $zip (@zip_files) {
          my $isExist = 0;
          my $tmp_sha = defined $desc ? $desc->{old_name} : '-';
          $isExist = $desc->{new_name} eq ($tmp_sha = $reverse_renamings{$tmp_sha}) while !$isExist && exists $reverse_renamings{$tmp_sha};
-         if (defined $desc && -e XMLS_DIR . "/$desc->{old_name}.xml" && !$isExist) {
+         if (defined $desc && -e XMLS_DIR . "$desc->{old_name}.xml" && !$isExist) {
             $xml_repo->run(rm => "$desc->{old_name}.xml");
             $xml_repo->run(commit => '-m', "delete old version of '$title'");
             if ($desc->{new_name} ne $sha1) {
@@ -334,13 +334,13 @@ REPOSITORY_CREATION:
 mkdir REPOS_DIR if !$needAuthorTable;
 foreach my $root (@start_v) {
    next if !defined $root->{res_id};
-   my $repo_path = "@{[REPOS_DIR]}/$root->{res_id}";
+   my $repo_path = REPOS_DIR . $root->{res_id};
    my $v = $root;
    my $prev_title;
    mkdir $repo_path;
    Git::Repository->run(init => $repo_path);
    do {
-      my $zip_path = PROBLEMS_DIR . "/$v->{zip}";
+      my $zip_path = PROBLEMS_DIR . $v->{zip};
       extract_zip($zip_path);
       my ($xml_file) = glob(TMP_ZIP_DIR . '/*.xml');
       my $xml;
@@ -373,7 +373,7 @@ foreach my $root (@start_v) {
          }
       );
       $repo->run(rm => '*', '--ignore-unmatch');
-      copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '/*');
+      copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '*');
       my $commit_msg = !defined $prev_title ? 'Initial commit' : ($prev_title ne $v->{title} ? "Rename task to '$title'": 'Change task');
       $repo->run(add => '-A');
       $repo->run(commit => '-m', $commit_msg, sprintf("--date='%s +1100'", stat($zip_path)->mtime));
