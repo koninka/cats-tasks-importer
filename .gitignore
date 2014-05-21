@@ -1,5 +1,5 @@
 oil
-problems
+problems*
 prs
 dir
 authors.txt
@@ -7,4 +7,4 @@ dirtests
 *~
 task_tmp
 tasks_rep
-task_xmls
+tasks_xmls
