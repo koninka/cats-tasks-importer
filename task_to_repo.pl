@@ -9,13 +9,16 @@ use strict;
 use warnings;
 use lib CATS_DB;
 use CATS::DB;
+use CATS::BinaryFile;
 use File::Path;
 use File::Copy;
 use File::stat;
 use File::Touch;
 use XML::LibXML;
 use Digest::SHA qw(sha1_hex);
+use DateTime::Format::Strptime;
 use Git::Repository;
+use CATS::Problem::Text;
 use Archive::Zip qw( :ERROR_CODES );
 use constant {
    LOG_FILE =>  'log',
@@ -44,6 +47,7 @@ printf "PARSE AUTHORS TO authors.txt STARDER\n" if $needAuthorTable;
 rmtree XMLS_DIR;
 rmtree REPOS_DIR;
 rmtree TMP_ZIP_DIR;
+rmtree ADDITIONAL_ZIP_DIR;
 unlink TMP_ZIP;
 
 my @authors = ();
@@ -67,12 +71,45 @@ sub extract_zip {
    $zip->extractTree('', TMP_ZIP_DIR) == AZ_OK or error("can't extract");
 }
 
-my %titles_id = ();
-my %id_titles = ();
+#-----------------------------------------------------------------
+#----------------------GET ALL TASKS FROM DB----------------------
+#-----------------------------------------------------------------
+my @additional_zips = ();
+my $strp = DateTime::Format::Strptime->new(pattern => '%d.%m.%Y %R', time_zone => 'Asia/Vladivostok');
+sub download_problem {
+   my ($pid) = @_;
+   my @ch = ('a'..'z', 'A'..'Z', '0'..'9');
+   my $hash = join '', map @ch[rand @ch], 1..32;
+   my ($udate, $zip_data) = eval { $dbh->selectrow_array('SELECT upload_date, zip_archive FROM problems WHERE id = ?', undef, $pid); };
+   if (!$@) {
+      my $zip_name =  ADDITIONAL_ZIP_DIR . "problem_$hash.zip";
+      CATS::BinaryFile::save($zip_name, $zip_data);
+      File::Touch->new(mtime => $strp->parse_datetime($udate)->epoch())->touch($zip_name);
+      push @additional_zips, $zip_name;
+   }
+}
+CATS::DB::sql_connect;
+my $ary_ref = $dbh->selectall_arrayref('SELECT id, title, hash FROM problems ORDER BY id');
+$dbh->commit;
+my %tasks = ();
+my %titles = ();
+mkdir ADDITIONAL_ZIP_DIR;
+foreach (@$ary_ref) {
+   my ($id, $title, $hash) = @$_;
+   utf8::encode($title);
+   download_problem($id) if !defined $hash;
+   my $sha_title = sha1_hex($title);
+   $titles{$sha_title} = $title;
+   if (defined $tasks{$sha_title} && @{$tasks{$sha_title}} > 0) {
+      push @{$tasks{$sha_title}}, $id;
+   } else {
+      $tasks{$sha_title} = [$id];
+   }
+}
+# rmtree ADDITIONAL_ZIP_DIR;
 
-my %zip_files = map {m|@{[PROBLEMS_DIR]}(.*)|; $1 => stat($_)->mtime} glob(PROBLEMS_DIR . '*.zip');
+my %zip_files = map {$_ => stat($_)->mtime} (glob(PROBLEMS_DIR . '*.zip'), @additional_zips);
 my @zip_files = sort{$zip_files{$a} <=> $zip_files{$b}} keys %zip_files;
-
 #-----------------------------------------------------------------
 #----------------------------FIX ZIPS-----------------------------
 #-----------------------------------------------------------------
@@ -164,9 +201,8 @@ my $xml_repo = Git::Repository->new(
       }
    }
 );
-foreach my $zip (@zip_files) {
-   next if exist_failed_zip($zip);
-   my $zip_path = PROBLEMS_DIR . $zip;
+foreach my $zip_path (@zip_files) {
+   next if exist_failed_zip($zip_path);
    eval {
       extract_zip($zip_path);
       my ($xml_file) = glob(TMP_ZIP_DIR . '*.xml');
@@ -181,12 +217,12 @@ foreach my $zip (@zip_files) {
       if (-e XMLS_DIR . "$sha1.xml") {
          copy $xml_file, XMLS_DIR . "$sha1.xml";
          $xml_repo->run(add => '.');
-         $xml_repo->run(commit => '-m', "update '$title', zip - $zip");
-         good_add_edge($zip, $sha1, $sha1);
+         $xml_repo->run(commit => '-m', "update '$title', zip - $zip_path");
+         good_add_edge($zip_path, $sha1, $sha1);
       } else {
          copy $xml_file, XMLS_DIR . "$sha1.xml";
          $xml_repo->run(add => '.');
-         $xml_repo->run(commit => '-m', "add '$title'" . ($DEBUG ? ", zip - $zip" : ''));
+         $xml_repo->run(commit => '-m', "add '$title'" . ($DEBUG ? ", zip - $zip_path" : ''));
          my @log = $xml_repo->run(log => '--diff-filter=C', '-C', "-C@{[SIMILARITY_INDEX]}%", '--summary', '--format="% "', '-1');
          my ($tmp_str) = @log = grep {/^ copy/} @log;
          my ($desc) = map {m/^\s+copy (.*)\.xml => (.*)\.xml \(([0-9]+)%\)/; {old_name => $1, new_name => $2}} @log;
@@ -200,36 +236,17 @@ foreach my $zip (@zip_files) {
                print "error with renames DETERMINATION\n";
                exit;
             }
-            good_add_edge($zip, $desc->{old_name}, $desc->{new_name});
-            add_to_sha_zip($zip, $desc->{new_name});
+            good_add_edge($zip_path, $desc->{old_name}, $desc->{new_name});
+            add_to_sha_zip($zip_path, $desc->{new_name});
          } else {
-            add_start_v($zip, $sha1);
+            add_start_v($zip_path, $sha1);
          }
       }
    };
-   add_failed_zip($zip) if $@;
+   add_failed_zip($zip_path) if $@;
    rmtree TMP_ZIP_DIR;
 }
 print_failed_zips;
-
-#-----------------------------------------------------------------
-#----------------------GET ALL TASKS FROM DB----------------------
-#-----------------------------------------------------------------
-CATS::DB::sql_connect;
-my $ary_ref = $dbh->selectall_arrayref('SELECT id, title FROM problems ORDER BY id');
-my %tasks = ();
-my %titles = ();
-foreach (@$ary_ref) {
-   my ($id, $title) = @$_;
-   utf8::encode($title);
-   my $sha_title = sha1_hex($title);
-   $titles{$sha_title} = $title;
-   if (defined $tasks{$sha_title} && @{$tasks{$sha_title}} > 0) {
-      push @{$tasks{$sha_title}}, $id;
-   } else {
-      $tasks{$sha_title} = [$id];
-   }
-}
 
 #-----------------------------------------------------------------
 #-------------------FIND ERRORS WITH ZIP CHAINS-------------------
@@ -273,7 +290,9 @@ foreach (@start_v) {
    my $titles_chain = "'$titles{$lv->{title}}'";
    my $other_ids = $_->{own_id};
    while (exists $edges{$lv->{zip}}) {
-      push @errors, "ERROR: There is more than one id for $lv->{zip}" if 1 ~~ @{$lv->{err}};
+      my $data = '';
+      $data .= "$_ " foreach @{$tasks{$lv->{title}}};
+      push @errors, "ERROR: There is more than one id for title '$titles{$lv->{title}}' in $lv->{zip}\n   ID'S: $data" if 1 ~~ @{$lv->{err}};
       my $res_id = defined $lv->{res_id} ? $lv->{res_id} : -1;
       $lv = $edges{$lv->{zip}};
       $other_ids .= " $lv->{own_id}" if defined $lv->{own_id} && ($lv->{own_id} != $res_id);
@@ -283,9 +302,11 @@ foreach (@start_v) {
    foreach my $err (@{$lv->{err}}) {
       my $err_str;
       if ($err == 1) {
-         $err_str = "ERROR: There is more than one id for $lv->{zip}";
+         my $data = '';
+         $data .= "$_ " foreach @{$tasks{$lv->{title}}};
+         $err_str = "ERROR: There is more than one id for title '$titles{$lv->{title}}' in $lv->{zip}\n   ID'S: $data";
       } elsif ($err == 2) {
-         $err_str = "ERROR: More than one record in the database corresponds to the archives in the chain\nID'S:$other_ids";
+         $err_str = "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids";
       } elsif ($err == 3) {
          $err_str = "FATAL ERROR: There are no records in the database corresponding to the archives in the chain";
       } elsif ($err == 4) {
@@ -341,8 +362,7 @@ foreach my $root (@start_v) {
    mkdir $repo_path;
    Git::Repository->run(init => $repo_path);
    do {
-      my $zip_path = PROBLEMS_DIR . $v->{zip};
-      extract_zip($zip_path);
+      extract_zip($v->{zip});
       my ($xml_file) = glob(TMP_ZIP_DIR . '*.xml');
       my $xml;
       eval { $xml = XML::LibXML->load_xml(location => $xml_file); };
@@ -375,7 +395,7 @@ foreach my $root (@start_v) {
       );
       $repo->run(rm => '*', '--ignore-unmatch');
       copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '*');
-      my $mtime = stat($zip_path)->mtime;
+      my $mtime = stat($v->{zip})->mtime;
       File::Touch->new(mtime => $mtime)->touch((glob($repo_path . '*'), $repo_path));
       my $commit_msg = !defined $prev_title ? 'Initial commit' : ($prev_title ne $v->{title} ? "Rename task to '$title'": 'Change task');
       $commit_msg .= ", zip - $v->{zip}" if $DEBUG;
