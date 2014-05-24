@@ -22,7 +22,7 @@ use CATS::Problem::Text;
 use Archive::Zip qw( :ERROR_CODES );
 use constant {
    LOG_FILE =>  'log',
-   ERROR_V_DEL =>'----------------------------------------------------------------------------------------------------------------------------',
+   ERROR_V_DEL =>'------------------------------------------------------------------------------------------------------------------------------------------------',
    LIST_PROCESSING => 'list_proc.txt'
 };
 use Data::Dumper;
@@ -212,6 +212,7 @@ foreach my $zip_path (@zip_files) {
       my ($el) = $xml->getDocumentElement()->getElementsByTagName('Problem');
       my $title = $el->getAttribute('title');
       utf8::encode($title);
+      print "$title\n";
       # my $sha1 = $title;
       my $sha1 = sha1_hex($title);
       if (-e XMLS_DIR . "$sha1.xml") {
@@ -282,6 +283,8 @@ sub set_id {
 
 $_->{has_error} = set_id($_, 0)->[1] foreach @start_v;
 
+my $total_err_amount = 0;
+my $fatal_err_amount = 0;
 foreach (@start_v) {
    next if !$_->{has_error};
    my @errors = ();
@@ -299,6 +302,7 @@ foreach (@start_v) {
       $chain .= " => $lv->{zip}";
       $titles_chain .= " => '$titles{$lv->{title}}'";
    }
+   my $isExistFatal = 0;
    foreach my $err (@{$lv->{err}}) {
       my $err_str;
       if ($err == 1) {
@@ -308,23 +312,35 @@ foreach (@start_v) {
       } elsif ($err == 2) {
          $err_str = "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids";
       } elsif ($err == 3) {
+         $isExistFatal = 1;
          $err_str = "FATAL ERROR: There are no records in the database corresponding to the archives in the chain";
       } elsif ($err == 4) {
+         $isExistFatal = 1;
          $err_str = "FATAL ERROR: There is no record in the database for the last archive $lv->{zip} in the chain";
       }
       push @errors, $err_str if defined $err_str;
    }
+   $total_err_amount++;
+   $fatal_err_amount++ if $isExistFatal;
    $, = "\n";
    print ERROR_V_DEL . "\nCHAIN: $chain\n";
    print "TITLE CHAIN: $titles_chain\n";
    print @errors;
-   print "\n@{[ERROR_V_DEL]}\n";
+   print "\n";
 }
 
+print "\n" . ERROR_V_DEL . "\n";
+my $hanging_rec = 0;
 foreach my $k (keys %tasks) {
    next if exists $used_titles{$k};
+   $hanging_rec++;
    print "ERROR: No corresponding archive for id $_\n" foreach @{$tasks{$k}};
 }
+
+print "\n\n=================================================================================================\n";
+print "FATAL ERRORS AMOUNT: $fatal_err_amount\n";
+print "TOTAL CHAIN ERRORS AMOUNT: $total_err_amount\n";
+print "HANGING RECORDS AMOUNT: $hanging_rec\n";
 # print Dumper(@start_v);
 # print "\n\n\n";
 # print Dumper %edges;
