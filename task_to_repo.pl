@@ -209,10 +209,9 @@ foreach my $zip_path (@zip_files) {
       my $xml;
       eval { $xml = XML::LibXML->load_xml(location => $xml_file); };
       error('corrupt xml file') if $@;
-      my ($el) = $xml->getDocumentElement()->getElementsByTagName('Problem');
-      my $title = $el->getAttribute('title');
+      my ($el) = $xml->getDocumentElement()->getElementsByTagName('Problem') or error('no Problem');
+      my $title = $el->getAttribute('title') or error('No title');
       utf8::encode($title);
-      print "$title\n";
       # my $sha1 = $title;
       my $sha1 = sha1_hex($title);
       if (-e XMLS_DIR . "$sha1.xml") {
