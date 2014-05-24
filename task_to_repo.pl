@@ -81,6 +81,7 @@ sub download_problem {
    my @ch = ('a'..'z', 'A'..'Z', '0'..'9');
    my $hash = join '', map @ch[rand @ch], 1..32;
    my ($udate, $zip_data) = eval { $dbh->selectrow_array('SELECT upload_date, zip_archive FROM problems WHERE id = ?', undef, $pid); };
+   print "Downloading problem $pid into $hash\n";
    if (!$@) {
       my $zip_name =  ADDITIONAL_ZIP_DIR . "problem_$hash.zip";
       CATS::BinaryFile::save($zip_name, $zip_data);
@@ -97,7 +98,7 @@ mkdir ADDITIONAL_ZIP_DIR;
 foreach (@$ary_ref) {
    my ($id, $title, $hash) = @$_;
    utf8::encode($title);
-   download_problem($id) if !defined $hash;
+   download_problem($id) if !defined $hash #|| !-f $hash;
    my $sha_title = sha1_hex($title);
    $titles{$sha_title} = $title;
    if (defined $tasks{$sha_title} && @{$tasks{$sha_title}} > 0) {
@@ -108,7 +109,7 @@ foreach (@$ary_ref) {
 }
 # rmtree ADDITIONAL_ZIP_DIR;
 
-my %zip_files = map {$_ => stat($_)->mtime} (glob(PROBLEMS_DIR . '*.zip'), @additional_zips);
+my %zip_files = map {$_ => stat($_)->mtime} (glob('pr/*.zip'), glob(PROBLEMS_DIR . '*.zip'), @additional_zips);
 my @zip_files = sort{$zip_files{$a} <=> $zip_files{$b}} keys %zip_files;
 #-----------------------------------------------------------------
 #----------------------------FIX ZIPS-----------------------------
@@ -212,8 +213,8 @@ foreach my $zip_path (@zip_files) {
       my ($el) = $xml->getDocumentElement()->getElementsByTagName('Problem') or error('no Problem');
       my $title = $el->getAttribute('title') or error('No title');
       utf8::encode($title);
-      # my $sha1 = $title;
       my $sha1 = sha1_hex($title);
+      $titles{$sha1} = $title;
       if (-e XMLS_DIR . "$sha1.xml") {
          copy $xml_file, XMLS_DIR . "$sha1.xml";
          $xml_repo->run(add => '.');
@@ -254,7 +255,7 @@ print_failed_zips;
 CATS::DB::sql_disconnect;
 my %used_titles = ();
 sub set_id {
-   my ($desc, $amount) = @_;
+   my ($desc, $amount, $depth) = @_;
    my $has_error = 0;
    $desc->{res_id} = $desc->{own_id} = undef;
    $desc->{err} = [];
@@ -275,12 +276,18 @@ sub set_id {
       push @{$desc->{err}}, 2 if $amount > 1; #много входов из таблицы problems в цепочку истории
       push @{$desc->{err}}, 3 if !$amount; #нету входов из таблицы задач
    } else {
-      ($desc->{res_id}, $desc->{has_error}) = @{set_id($edges{$desc->{zip}}, $amount)};
+      if ($depth > 20) {
+         print "Recursion too deep for '$titles{$desc->{title}}' id=" . ($desc->{own_id} // '?');
+         $desc->{has_error} = 1;
+      }
+      else {
+         ($desc->{res_id}, $desc->{has_error}) = @{set_id($edges{$desc->{zip}}, $amount, $depth + 1)};
+      }
    }
    return [$desc->{res_id}, $desc->{has_error}];
 }
 
-$_->{has_error} = set_id($_, 0)->[1] foreach @start_v;
+$_->{has_error} = set_id($_, 0, 0)->[1] foreach @start_v;
 
 my $total_err_amount = 0;
 my $fatal_err_amount = 0;
@@ -288,25 +295,39 @@ foreach (@start_v) {
    next if !$_->{has_error};
    my @errors = ();
    my $lv = $_;
-   my $chain = $lv->{zip};
-   my $titles_chain = "'$titles{$lv->{title}}'";
-   my $other_ids = $_->{own_id};
-   while (exists $edges{$lv->{zip}}) {
+=begin
+   my $ch = [];
+   for (my $v = $_; $v; $v = $edges{$lv->{zip}}) {
       my $data = '';
       $data .= "$_ " foreach @{$tasks{$lv->{title}}};
+      push @errors, "ERROR: There is more than one id for title '$titles{$lv->{title}}' in $lv->{zip}\n   ID'S: $data" if 1 ~~ @{$lv->{err}};
+      push @$ch, $v;
+   }
+   my $titles_chain1 = join ' => ', map $titles{$_->{title}}, @$ch;
+=cut
+   my $chain = $lv->{zip};
+   my $titles_chain = "$lv->{title}:'$titles{$lv->{title}}'";
+   my $other_ids = $_->{own_id} // '';
+   while (exists $edges{$lv->{zip}}) {
+      my $data = '';
+      if (exists $tasks{$lv->{title}}) {
+         $data .= "$_ " foreach @{$tasks{$lv->{title}}};
+      }
       push @errors, "ERROR: There is more than one id for title '$titles{$lv->{title}}' in $lv->{zip}\n   ID'S: $data" if 1 ~~ @{$lv->{err}};
       my $res_id = defined $lv->{res_id} ? $lv->{res_id} : -1;
       $lv = $edges{$lv->{zip}};
       $other_ids .= " $lv->{own_id}" if defined $lv->{own_id} && ($lv->{own_id} != $res_id);
       $chain .= " => $lv->{zip}";
-      $titles_chain .= " => '$titles{$lv->{title}}'";
+      $titles_chain .= " => $lv->{title}:'$titles{$lv->{title}}'";
    }
    my $isExistFatal = 0;
    foreach my $err (@{$lv->{err}}) {
       my $err_str;
       if ($err == 1) {
          my $data = '';
-         $data .= "$_ " foreach @{$tasks{$lv->{title}}};
+         if (exists $tasks{$lv->{title}}) {
+            $data .= "$_ " foreach @{$tasks{$lv->{title}}};
+         }
          $err_str = "ERROR: There is more than one id for title '$titles{$lv->{title}}' in $lv->{zip}\n   ID'S: $data";
       } elsif ($err == 2) {
          $err_str = "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids";
@@ -333,7 +354,7 @@ my $hanging_rec = 0;
 foreach my $k (keys %tasks) {
    next if exists $used_titles{$k};
    $hanging_rec++;
-   print "ERROR: No corresponding archive for id $_\n" foreach @{$tasks{$k}};
+   printf "ERROR: No corresponding archive for ids %s (%s)\n", join(',', @{$tasks{$k}}), $titles{$k};
 }
 
 print "\n\n=================================================================================================\n";
