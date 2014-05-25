@@ -180,7 +180,7 @@ foreach my $zip_path (@zip_files) {
       utf8::encode($title);
       utf8::encode($author);
       my $new_sha = sha1_hex($title . $author);
-      $titles{$new_sha} = $title;
+      $titles{$new_sha} = $title . " ($author)";
       if (-e XMLS_DIR . "$new_sha.xml") {
          copy $xml_file, XMLS_DIR . "$new_sha.xml";
          $xml_repo->run(add => '.');
@@ -194,7 +194,7 @@ foreach my $zip_path (@zip_files) {
          my ($tmp_str) = @log = grep {/^ copy/} @log;
          my ($renaming_desc) = map {m/^\s+copy (.*)\.xml => (.*)\.xml \(([0-9]+)%\)/; {old_sha => $1, new_sha => $2}} @log;
          my $isExist = 0;
-         my $tmp_sha = defined $renaming_desc ? $renaming_desc->{old_name} : '-';
+         my $tmp_sha = defined $renaming_desc ? $renaming_desc->{old_sha} : '-';
          $isExist = $renaming_desc->{new_sha} eq ($tmp_sha = $reverse_renamings{$tmp_sha}) while !$isExist && exists $reverse_renamings{$tmp_sha};
          if (defined $renaming_desc && -e XMLS_DIR . "$renaming_desc->{old_sha}.xml" && !$isExist) {
             $xml_repo->run(rm => "$renaming_desc->{old_sha}.xml");
@@ -225,6 +225,7 @@ sub set_repo_id {
    my $has_error = 0;
    $v->{res_id} = $v->{own_id} = undef;
    $v->{err} = [];
+   $v->{has_error} = 0;
    # print Dumper($v);
    if (exists $db_tasks{$v->{sha}}) {
       $used_titles{$v->{sha}} = 1;
@@ -245,75 +246,54 @@ sub set_repo_id {
       if ($depth > 25) {
          $v->{has_error} = 1;
          print "Recursion too deep for '$titles{$v->{sha}}' id=" . ($v->{own_id} // '?');
-      }
-      else {
+      } else {
          ($v->{res_id}, $v->{has_error}) = @{set_repo_id($edges{$v->{zip}}, $amount, $depth + 1)};
       }
    }
    return [$v->{res_id}, $v->{has_error}];
 }
 
-$_->{has_error} = set_repo_id($_, 0, 0)->[1] foreach @start_v;
+($_->{res_id}, $_->{has_error}) = @{set_repo_id($_, 0, 0)} foreach @start_v;
 
+my $good_amount = 0;
 my $total_err_amount = 0;
 my $fatal_err_amount = 0;
-my @good_v = ();
-foreach (@start_v) {
-   next if !$_->{has_error};
+foreach my $start_vertex (@start_v) {
    my @errors = ();
-   my $lv = $_;
-=begin
    my $ch = [];
-   for (my $v = $_; $v; $v = $edges{$lv->{zip}}) {
-      my $data = '';
-      $data .= "$_ " foreach @{$db_tasks{$lv->{sha}};
-      push @errors, "ERROR: There is more than one id for title '$titles{$lv->{sha}}' in $lv->{zip}\n   ID'S: $data" if 1 ~~ @{$lv->{err}};
+   my $last_vertex = $start_vertex;
+   my $hasMoreIdErr = 0;
+   for (my $v = $start_vertex; $v; $v = $edges{$v->{zip}}) {
+      foreach my $err (@{$v->{err}}) {
+         if ($err == 1) {
+            my $data = '';
+            $data .= "$_ " foreach @{$db_tasks{$v->{sha}}};
+            push @errors, "ERROR: There is more than one id for title '$titles{$v->{sha}}' in $v->{zip}\n   ID'S: $data";
+         } else {
+            $hasMoreIdErr = $err == 2;
+         }
+      }
+      $last_vertex = $v;
       push @$ch, $v;
    }
-   my $titles_chain1 = join ' => ', map $titles{$_->{sha}}, @$ch;
-=cut
-   my $chain = $lv->{zip};
-   my $titles_chain = "$lv->{sha}:'$titles{$lv->{sha}}'";
-   my $other_ids = $_->{own_id} // '';
-   while (exists $edges{$lv->{zip}}) {
-      my $data = '';
-      if (exists $db_tasks{$lv->{sha}}) {
-         $data .= "$_ " foreach @{$db_tasks{$lv->{sha}}};
-      }
-      push @errors, "ERROR: There is more than one id for title '$titles{$lv->{sha}}' in $lv->{zip}\n   ID'S: $data" if 1 ~~ @{$lv->{err}};
-      my $res_id = defined $lv->{res_id} ? $lv->{res_id} : -1;
-      $lv = $edges{$lv->{zip}};
-      $other_ids .= " $lv->{own_id}" if defined $lv->{own_id} && ($lv->{own_id} != $res_id);
-      $chain .= " => $lv->{zip}";
-      $titles_chain .= " => $lv->{sha}:'$titles{$lv->{sha}}'";
+   my $isExistFatal;
+   push @errors, "FATAL ERROR: There are no records in the database corresponding to the archives in the chain"
+      if $isExistFatal = 3 ~~ @{$last_vertex->{err}};
+   if (4 ~~ @{$last_vertex->{err}}) {
+      $isExistFatal = 1;
+      push @errors, "FATAL ERROR: There is no record in the database for the last archive $last_vertex->{zip} in the chain";
    }
-   my $isExistFatal = 0;
-   foreach my $err (@{$lv->{err}}) {
-      my $err_str;
-      if ($err == 1) {
-         my $data = '';
-         if (exists $db_tasks{$lv->{sha}}) {
-            $data .= "$_ " foreach @{$db_tasks{$lv->{sha}}};
-         }
-         $err_str = "ERROR: There is more than one id for title '$titles{$lv->{sha}}' in $lv->{zip}\n   ID'S: $data";
-      } elsif ($err == 2) {
-         $err_str = "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids";
-      } elsif ($err == 3) {
-         $isExistFatal = 1;
-         $err_str = "FATAL ERROR: There are no records in the database corresponding to the archives in the chain";
-      } elsif ($err == 4) {
-         $isExistFatal = 1;
-         $err_str = "FATAL ERROR: There is no record in the database for the last archive $lv->{zip} in the chain";
-      }
-      push @errors, $err_str if defined $err_str;
-   }
-   $total_err_amount++;
-   push @good_v, $_ if  !$isExistFatal;
+   my $zips_chain = join " =>\n\t", map "$_->{zip}", @$ch;
+   my $titles_chain = join " =>\n\t", map "$_->{sha}: $titles{$_->{sha}}", @$ch;
+   my $other_ids = join ' | ', map {$_->{own_id} if defined $_->{own_id}}  @$ch;
+   push @errors, "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids" if $hasMoreIdErr;
+   $good_amount++ if !$isExistFatal;
+   $total_err_amount++ if @errors > 0;
    $fatal_err_amount++ if $isExistFatal;
    $, = "\n";
-   print ERROR_V_DEL . "\nCHAIN: $chain\n";
-   print "TITLE CHAIN: $titles_chain\n";
-   print @errors;
+   print ERROR_V_DEL . "\nZIPS CHAIN:\n\t$zips_chain\n";
+   print "TITLE CHAIN:\n\t$titles_chain\n";
+   print @errors if @errors > 0;
    print "\n";
 }
 
@@ -326,23 +306,10 @@ foreach my $k (keys %db_tasks) {
 }
 
 print "\n=================================================================================================\n";
+print "STORIES CREATED: $good_amount\n";
 print "FATAL ERRORS AMOUNT: $fatal_err_amount\n";
 print "TOTAL CHAIN ERRORS AMOUNT: $total_err_amount\n";
 print "HANGING RECORDS AMOUNT: $hanging_rec\n";
-
-open FILE, '>success_chain.log' or die $!;
-foreach (@good_v) {
-   my $ch = [];
-   for (my $v = $_; $v; $v = $edges{$v->{zip}}) { push @$ch, $v; }
-   my $zip_chain = join ' => ', map $_->{zip}, @$ch;
-   my $titles_chain = join ' => ', map $titles{$_->{sha}}, @$ch;
-   utf8::encode($_);
-   print FILE ERROR_V_DEL . "\nZIP CHAIN: $zip_chain\n";
-   print FILE "TITLE CHAIN: $titles_chain\n";
-   print FILE "\n";
-}
-close FILE;
-
 # print "\nZIP CHAINS\n";
 # my $amount = 0;
 # foreach (@start_v) {
