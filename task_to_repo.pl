@@ -81,7 +81,7 @@ sub download_problem {
    my @ch = ('a'..'z', 'A'..'Z', '0'..'9');
    my $hash = join '', map @ch[rand @ch], 1..32;
    my ($udate, $zip_data) = eval { $dbh->selectrow_array('SELECT upload_date, zip_archive FROM problems WHERE id = ?', undef, $pid); };
-   print "Downloading problem $pid into $hash\n";
+   # print "Downloading problem $pid into $hash\n";
    if (!$@) {
       my $zip_name =  ADDITIONAL_ZIP_DIR . "problem_$hash.zip";
       CATS::BinaryFile::save($zip_name, $zip_data);
@@ -98,7 +98,9 @@ mkdir ADDITIONAL_ZIP_DIR;
 foreach (@$ary_ref) {
    my ($id, $title, $hash) = @$_;
    utf8::encode($title);
-   download_problem($id) if !defined $hash #|| !-f $hash;
+   my $zip_name;
+   $zip_name = "problem_$hash.zip" if defined $hash;
+   download_problem($id) if !defined $hash || (!-f ADDITIONAL_PROBLEMS_DIR . $zip_name && !-f PROBLEMS_DIR . $zip_name);
    my $sha_title = sha1_hex($title);
    $titles{$sha_title} = $title;
    if (defined $tasks{$sha_title} && @{$tasks{$sha_title}} > 0) {
@@ -109,7 +111,7 @@ foreach (@$ary_ref) {
 }
 # rmtree ADDITIONAL_ZIP_DIR;
 
-my %zip_files = map {$_ => stat($_)->mtime} (glob('pr/*.zip'), glob(PROBLEMS_DIR . '*.zip'), @additional_zips);
+my %zip_files = map {$_ => stat($_)->mtime} (glob(ADDITIONAL_PROBLEMS_DIR . '*.zip'), glob(PROBLEMS_DIR . '*.zip'), @additional_zips);
 my @zip_files = sort{$zip_files{$a} <=> $zip_files{$b}} keys %zip_files;
 #-----------------------------------------------------------------
 #----------------------------FIX ZIPS-----------------------------
