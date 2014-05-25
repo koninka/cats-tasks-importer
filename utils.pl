@@ -15,7 +15,7 @@ use constant {
    XMLS_DIR                => 'tasks_xmls/',
    REPOS_DIR               => 'tasks_rep/',
    TMP_ZIP_DIR             => 'dir/',
-   PROBLEMS_DIR            => '2/',
+   PROBLEMS_DIR            => 'prs/',
    SIMILARITY_INDEX        => 80,
    ADDITIONAL_ZIP_DIR      => 'db_prs/',
    ADDITIONAL_PROBLEMS_DIR => 'pr/'
