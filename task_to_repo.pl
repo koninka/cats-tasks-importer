@@ -97,6 +97,7 @@ my %titles = ();
 mkdir ADDITIONAL_ZIP_DIR;
 foreach (@$ary_ref) {
    my ($id, $title, $author, $hash) = @$_;
+   $author ||= '';
    utf8::encode($title);
    utf8::encode($author);
    my $zip_name;
@@ -245,7 +246,7 @@ sub set_repo_id {
    } else {
       if ($depth > 25) {
          $v->{has_error} = 1;
-         print "Recursion too deep for '$titles{$v->{sha}}' id=" . ($v->{own_id} // '?');
+         print "Recursion too deep for '$titles{$v->{sha}}' id=" . ($v->{own_id} // '?') . "\n";
       } else {
          ($v->{res_id}, $v->{has_error}) = @{set_repo_id($edges{$v->{zip}}, $amount, $depth + 1)};
       }
