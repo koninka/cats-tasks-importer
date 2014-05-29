@@ -380,6 +380,7 @@ foreach my $root (@start_v) {
       $commit_msg .= ", zip - $v->{zip}" if $DEBUG;
       $repo->run(add => '-A');
       $repo->run(commit => '-m', $commit_msg, sprintf("--date='%s +1100'", $mtime));
+      $repo->run('gc');
       $prev_title = $v->{sha};
       rmtree TMP_ZIP_DIR;
       $v = $edges{$v->{zip}};
