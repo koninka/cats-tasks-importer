@@ -235,15 +235,12 @@ sub set_repo_id {
    push @ids, $v->{own_id} if defined $v->{own_id} && !($v->{own_id} ~~ @ids);
    if (!exists $edges{$v->{zip}}) {
       $v->{res_id} = $v->{own_id};
+      print "Recursion too deep for '$titles{$v->{sha}}', id=" . ($v->{own_id} // '?') . ", zip=P$v->{zip}}\n" if $depth >= 100;
       push @{$v->{err}}, 2 if @ids > 1; #много входов из таблицы problems в цепочку истории
       push @{$v->{err}}, 3 if !$amount; #нету входов из таблицы задач
       push @{$v->{err}}, 4 if !exists $db_tasks{$v->{sha}}; #нету айди для последней задачи в цепочке
    } else {
-      if ($depth >= 100) {
-         print "Recursion too deep for '$titles{$v->{sha}}' id=" . ($v->{own_id} // '?') . "\n";
-      } else {
-         $v->{res_id} = set_repo_id($edges{$v->{zip}}, $amount, $depth + 1);
-      }
+      $v->{res_id} = set_repo_id($edges{$v->{zip}}, $amount, $depth + 1);
    }
    return $v->{res_id};
 }
@@ -265,14 +262,15 @@ foreach my $start_vertex (@start_v) {
          if ($err == 1) {
             my $data = '';
             $data .= "$_ " foreach @{$db_tasks{$v->{sha}}};
+            chop $data;
             push @errors, "ERROR: There is more than one id for title '$titles{$v->{sha}}' in $v->{zip}\n   ID'S: $data";
          }
       }
       $last_vertex = $v;
       push @$ch, $v;
    }
-   my $other_ids = join ' | ', map {defined $_->{own_id} ? $_->{own_id} : 'undef'}  @$ch;
-   push @errors, "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids"
+   my $other_ids = join ' => ', map {defined $_->{own_id} ? $_->{own_id} : 'undef'}  @$ch;
+   push @errors, "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S: $other_ids"
       if 2 ~~ @{$last_vertex->{err}};
    my $isExistFatal;
    push @errors, "FATAL ERROR: There are no records in the database corresponding to the archives in the chain"
