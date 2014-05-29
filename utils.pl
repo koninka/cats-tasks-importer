@@ -17,6 +17,7 @@ use constant {
    TMP_ZIP_DIR             => 'dir/',
    PROBLEMS_DIR            => 'prs/',
    SIMILARITY_INDEX        => 80,
+   BAD_PROBLEMS_DIR        => 'bad/',
    ADDITIONAL_ZIP_DIR      => 'db_prs/',
    ADDITIONAL_PROBLEMS_DIR => 'pr/'
 };

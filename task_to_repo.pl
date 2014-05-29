@@ -335,8 +335,7 @@ print "HANGING RECORDS AMOUNT: $hanging_rec\n";
 REPOSITORY_CREATION:
 mkdir REPOS_DIR if !$needAuthorTable;
 foreach my $root (@start_v) {
-   next if !defined $root->{res_id};
-   my $repo_path = REPOS_DIR . $root->{res_id} . '/';
+   my $repo_path = REPOS_DIR . (defined $root->{res_id} ? $root->{res_id} : BAD_PROBLEMS_DIR . $root->{sha}) . '/';
    my $v = $root;
    my $prev_title;
    mkdir $repo_path;
