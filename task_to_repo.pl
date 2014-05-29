@@ -223,38 +223,30 @@ CATS::DB::sql_disconnect;
 my %used_titles = ();
 sub set_repo_id {
    my ($v, $amount, $depth) = @_;
-   my $has_error = 0;
-   $v->{res_id} = $v->{own_id} = undef;
    $v->{err} = [];
-   $v->{has_error} = 0;
-   # print Dumper($v);
+   $v->{res_id} = $v->{own_id} = undef;
    if (exists $db_tasks{$v->{sha}}) {
       $used_titles{$v->{sha}} = 1;
       $amount++;
-      $has_error = @{$db_tasks{$v->{sha}}} > 1;
-      push @{$v->{err}}, 1 if $has_error; #"There is more than one id for $v->{zip}"
+      push @{$v->{err}}, 1 if @{$db_tasks{$v->{sha}}} > 1; #"There is more than one id for $v->{zip}"
       $v->{own_id} = $db_tasks{$v->{sha}}->[0];
-   } elsif (!exists $edges{$v->{zip}}) {
-      $has_error = 1;
-      push @{$v->{err}}, 4; #нету айди для последней задачи в цепочке
    }
    if (!exists $edges{$v->{zip}}) {
       $v->{res_id} = $v->{own_id};
-      $v->{has_error} = $has_error || $amount > 1 || !$amount;
       push @{$v->{err}}, 2 if $amount > 1; #много входов из таблицы problems в цепочку истории
       push @{$v->{err}}, 3 if !$amount; #нету входов из таблицы задач
+      push @{$v->{err}}, 4 if !exists $db_tasks{$v->{sha}}; #нету айди для последней задачи в цепочке
    } else {
-      if ($depth > 25) {
-         $v->{has_error} = 1;
+      if ($depth >= 100) {
          print "Recursion too deep for '$titles{$v->{sha}}' id=" . ($v->{own_id} // '?') . "\n";
       } else {
-         ($v->{res_id}, $v->{has_error}) = @{set_repo_id($edges{$v->{zip}}, $amount, $depth + 1)};
+         $v->{res_id} = set_repo_id($edges{$v->{zip}}, $amount, $depth + 1);
       }
    }
-   return [$v->{res_id}, $v->{has_error}];
+   return $v->{res_id};
 }
 
-($_->{res_id}, $_->{has_error}) = @{set_repo_id($_, 0, 0)} foreach @start_v;
+$_->{res_id} = set_repo_id($_, 0, 0) foreach @start_v;
 
 my $good_amount = 0;
 my $total_err_amount = 0;
