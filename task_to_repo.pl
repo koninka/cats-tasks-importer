@@ -221,6 +221,7 @@ print_failed_zips;
 #-----------------------------------------------------------------
 CATS::DB::sql_disconnect;
 my %used_titles = ();
+my @ids = ();
 sub set_repo_id {
    my ($v, $amount, $depth) = @_;
    $v->{err} = [];
@@ -231,9 +232,10 @@ sub set_repo_id {
       push @{$v->{err}}, 1 if @{$db_tasks{$v->{sha}}} > 1; #"There is more than one id for $v->{zip}"
       $v->{own_id} = $db_tasks{$v->{sha}}->[0];
    }
+   push @ids, $v->{own_id} if defined $v->{own_id} && !($v->{own_id} ~~ @ids);
    if (!exists $edges{$v->{zip}}) {
       $v->{res_id} = $v->{own_id};
-      push @{$v->{err}}, 2 if $amount > 1; #много входов из таблицы problems в цепочку истории
+      push @{$v->{err}}, 2 if @ids > 1; #много входов из таблицы problems в цепочку истории
       push @{$v->{err}}, 3 if !$amount; #нету входов из таблицы задач
       push @{$v->{err}}, 4 if !exists $db_tasks{$v->{sha}}; #нету айди для последней задачи в цепочке
    } else {
@@ -246,7 +248,10 @@ sub set_repo_id {
    return $v->{res_id};
 }
 
-$_->{res_id} = set_repo_id($_, 0, 0) foreach @start_v;
+foreach (@start_v) {
+   @ids = ();
+   $_->{res_id} = set_repo_id($_, 0, 0)
+}
 
 my $good_amount = 0;
 my $total_err_amount = 0;
@@ -255,20 +260,20 @@ foreach my $start_vertex (@start_v) {
    my @errors = ();
    my $ch = [];
    my $last_vertex = $start_vertex;
-   my $hasMoreIdErr = 0;
    for (my $v = $start_vertex; $v; $v = $edges{$v->{zip}}) {
       foreach my $err (@{$v->{err}}) {
          if ($err == 1) {
             my $data = '';
             $data .= "$_ " foreach @{$db_tasks{$v->{sha}}};
             push @errors, "ERROR: There is more than one id for title '$titles{$v->{sha}}' in $v->{zip}\n   ID'S: $data";
-         } else {
-            $hasMoreIdErr = $err == 2;
          }
       }
       $last_vertex = $v;
       push @$ch, $v;
    }
+   my $other_ids = join ' | ', map {defined $_->{own_id} ? $_->{own_id} : 'undef'}  @$ch;
+   push @errors, "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids"
+      if 2 ~~ @{$last_vertex->{err}};
    my $isExistFatal;
    push @errors, "FATAL ERROR: There are no records in the database corresponding to the archives in the chain"
       if $isExistFatal = 3 ~~ @{$last_vertex->{err}};
@@ -278,8 +283,6 @@ foreach my $start_vertex (@start_v) {
    }
    my $zips_chain = join " =>\n\t", map "$_->{zip}", @$ch;
    my $titles_chain = join " =>\n\t", map "$_->{sha}: $titles{$_->{sha}}", @$ch;
-   my $other_ids = join ' | ', map {$_->{own_id} if defined $_->{own_id}}  @$ch;
-   push @errors, "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S:$other_ids" if $hasMoreIdErr;
    $good_amount++ if !$isExistFatal;
    $total_err_amount++ if @errors > 0;
    $fatal_err_amount++ if $isExistFatal;
