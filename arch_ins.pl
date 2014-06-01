@@ -41,14 +41,18 @@ sub get_xml_from_zip {
 CATS::DB::sql_connect;
 
 $dbh->do('DELETE FROM problems');
+$dbh->do('DELETE FROM contest_problems');
 my $sth = $dbh->prepare(q~
    INSERT INTO problems (id, title, author, zip_archive, hash, upload_date, contest_id, input_file, output_file)
    VALUES (?, ?, ?, ?, ?, current_timestamp, 1,'in','out')~);
+my $cp_sth = $dbh->prepare(q~
+   INSERT INTO contest_problems(id, problem_id, contest_id) VALUES(?, ?, 1)~);
 
 my @tasks = ();
 my @files = map {m|@{[PROBLEMS_DIR]}(.*)|; $1} glob(PROBLEMS_DIR . '*.zip');
 # my @files = sort{$files{$a} <=> $files{$b}} keys %files;
 
+my $id_gen++;
 foreach my $zip (@files) {
    my $xml_data;
    my $zip_path = PROBLEMS_DIR . $zip;
@@ -72,7 +76,8 @@ foreach my $zip (@files) {
          my $data = '';
          CATS::BinaryFile::load($zip_path, \$data) or error("open '$zip_path' failed: $!");
          $zip =~ m/^problem_(.*).zip$/;
-         $sth->bind_param(1, new_id);
+         my $pid = new_id;
+         $sth->bind_param(1, $pid);
          $sth->bind_param(2, $title);
          $sth->bind_param(3, $author);
          $sth->bind_param(4, $data);
@@ -86,6 +91,9 @@ foreach my $zip (@files) {
             $sth->bind_param(5, $1);
             $sth->execute;
          }
+         $cp_sth->bind_param(1, $id_gen++);
+         $cp_sth->bind_param(2, $pid);
+         $cp_sth->execute;
          push @tasks, $sha1;
       }
    };
