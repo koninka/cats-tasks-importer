@@ -302,24 +302,6 @@ print "STORIES CREATED: $good_amount\n";
 print "FATAL ERRORS AMOUNT: $fatal_err_amount\n";
 print "TOTAL CHAIN ERRORS AMOUNT: $total_err_amount\n";
 print "HANGING RECORDS AMOUNT: $hanging_rec\n";
-# print "\nZIP CHAINS\n";
-# my $amount = 0;
-# foreach (@start_v) {
-#    print "$_->{zip}";
-#    $amount++;
-#    my $zip = $_->{zip};
-#    while (exists $edges{$zip}) {
-#       print " => ";
-#       $zip = $edges{$zip}{zip};
-#       print "$zip";
-#       $amount++;
-#    }
-#    print "\n";
-# }
-
-# print "\nAMOUNT = " . $amount;
-# print "\n";
-
 #-----------------------------------------------------------------
 #------------------REPOSITORY CREATION FOR TASKS------------------
 #-----------------------------------------------------------------
