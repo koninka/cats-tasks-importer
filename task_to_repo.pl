@@ -2,11 +2,11 @@
 
 BEGIN {
    require "utils.pl";
-   require "authors.pl";
 }
 
 use strict;
 use warnings;
+use Authors;
 use lib CATS_DB;
 use CATS::DB;
 use CATS::BinaryFile;
@@ -26,8 +26,6 @@ use constant {
    LIST_PROCESSING => 'list_proc.txt'
 };
 use Data::Dumper;
-
-our %authors_map;
 
 Archive::Zip::setErrorHandler(sub {});
 
@@ -349,22 +347,13 @@ foreach my $root (@start_v) {
       s/\(.*\)//;
       s/^\s*(.*?)\s*$/$1/;
       my $author = $_;
-      my $repo = Git::Repository->new(
-         work_tree => $repo_path,
-         {
-            env => {
-               GIT_AUTHOR_NAME  =>
-                     exists $authors_map{$author}
-                  ?  (
-                        exists $authors_map{$author}{git_author}
-                      ? $authors_map{$author}{git_author}
-                      : $author
-                     )
-                  : EXTERNAL_AUTHOR,
-               GIT_AUTHOR_EMAIL => exists $authors_map{$author} ? $authors_map{$author}{email} : DEFAULT_EMAIL
-            }
+      my ($git_author, $git_author_email) = get_git_author_info($author);
+      my $repo = Git::Repository->new(work_tree => $repo_path, {
+         env => {
+            GIT_AUTHOR_NAME  => $git_author,
+            GIT_AUTHOR_EMAIL => $git_author_email
          }
-      );
+      });
       $repo->run(rm => '*', '--ignore-unmatch');
       copy $_, $repo_path foreach glob(TMP_ZIP_DIR . '*');
       my $mtime = stat($v->{zip})->mtime;

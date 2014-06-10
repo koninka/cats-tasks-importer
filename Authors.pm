@@ -1,6 +1,24 @@
 #!/usr/bin/perl
 
-BEGIN { require "utils.pl"; }
+package Authors;
+
+use strict;
+use warnings;
+
+BEGIN {
+   use Exporter;
+   our @ISA = qw(Exporter);
+
+   our @EXPORT = qw(get_git_author_info);
+   # our %EXPORT_TAGS = (all => [ @EXPORT ]);
+}
+
+use constant {
+   KLENINS_EMAIL   => 'klenin@gmail.com',
+   DEFAULT_EMAIL   => 'unknown@example.com',
+   DEFAULT_AUTHOR  => 'Unknown Author',
+   EXTERNAL_AUTHOR => 'external'
+};
 
 sub make_author_info {
    my $h = {@_};
@@ -9,7 +27,7 @@ sub make_author_info {
    return $res;
 }
 
-our %authors_map = (
+my %authors_map = (
    'A. Klenin'           => make_author_info(email => KLENINS_EMAIL),
    'А. Zhuplev'          => make_author_info(git_author => 'A. Zhuplev'),
    'A. Zhuplev'          => make_author_info,
@@ -63,5 +81,16 @@ our %authors_map = (
    'C. Пак'              => make_author_info,
    'Туфанов И.'          => make_author_info(git_author => 'И. Туфанов'),
 );
+
+sub get_git_author_info {
+   my ($author) = @_;
+   my $git_author =
+         exists $authors_map{$author}
+      ? (exists $authors_map{$author}{git_author} ? $authors_map{$author}{git_author} : $author)
+      : EXTERNAL_AUTHOR;
+   my $email = exists $authors_map{$author} ? $authors_map{$author}{email} : DEFAULT_EMAIL;
+   return ($git_author, $email);
+}
+
 
 1;
