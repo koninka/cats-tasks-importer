@@ -9,7 +9,7 @@ BEGIN {
    use Exporter;
    our @ISA = qw(Exporter);
 
-   our @EXPORT = qw(get_git_author_info);
+   our @EXPORT = qw(get_git_author_info KLENINS_EMAIL DEFAULT_EMAIL DEFAULT_AUTHOR EXTERNAL_AUTHOR);
    # our %EXPORT_TAGS = (all => [ @EXPORT ]);
 }
 
