@@ -251,6 +251,8 @@ foreach (@start_v) {
 my $good_amount = 0;
 my $total_err_amount = 0;
 my $fatal_err_amount = 0;
+my %fix_ids = ();
+my $fix_sql_pattern = q~UPDATE PROBLEMS SET repo_id = '%d', commit_sha = '%s' WHERE id = %d;~;
 foreach my $start_vertex (@start_v) {
    my @errors = ();
    my $ch = [];
@@ -268,8 +270,21 @@ foreach my $start_vertex (@start_v) {
       push @$ch, $v;
    }
    my $other_ids = join ' => ', map {defined $_->{own_id} ? $_->{own_id} : 'undef'}  @$ch;
-   push @errors, "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S: $other_ids"
-      if 2 ~~ @{$last_vertex->{err}};
+   if (2 ~~ @{$last_vertex->{err}}) {
+      push @errors, "ERROR: More than one record in the database corresponds to the archives in the chain\n   OTHER ID'S: $other_ids";
+      my @used_ids = ();
+      for (my $v = $start_vertex; $v && defined $v->{res_id}; $v = $edges{$v->{zip}}) {
+         if (defined $v->{own_id} && $v->{own_id} != $v->{res_id}) {
+            # die "EPIC FAIL: ID $v->{own_id} ALREDY USED" if exists $fix_ids{$v->{own_id}};
+            # $fix_ids{$v->{own_id}} = 1;
+            push @used_ids, $v->{own_id} if !($v->{own_id} ~~ @used_ids);
+         }
+      }
+      foreach (@used_ids) {
+         die "EPIC FAIL: ID $_ ALREDY USED" if exists $fix_ids{$_};
+      }
+      $fix_ids{$_} = 1 foreach @used_ids;
+   }
    my $isExistFatal;
    push @errors, "FATAL ERROR: There are no records in the database corresponding to the archives in the chain"
       if $isExistFatal = 3 ~~ @{$last_vertex->{err}};
@@ -306,6 +321,7 @@ print "HANGING RECORDS AMOUNT: $hanging_rec\n";
 #------------------REPOSITORY CREATION FOR TASKS------------------
 #-----------------------------------------------------------------
 REPOSITORY_CREATION:
+my %fix_sqls = ();
 mkdir REPOS_DIR if !$needAuthorTable;
 foreach my $root (@start_v) {
    my $repo_path = REPOS_DIR . (defined $root->{res_id} ? $root->{res_id} : BAD_PROBLEMS_DIR . $root->{sha}) . '/';
@@ -345,6 +361,10 @@ foreach my $root (@start_v) {
       $repo->run(add => '-A');
       $repo->run(commit => '-m', $commit_msg, sprintf("--date='%s +1100'", $mtime));
       $repo->run('gc');
+      if (defined $v->{own_id} && exists $fix_ids{$v->{own_id}} && !exists $fix_sqls{$v->{own_id}}) {
+         my $sha = $repo->run('rev-parse' => 'HEAD');
+         $fix_sqls{$v->{own_id}} = sprintf $fix_sql_pattern, $v->{res_id}, $sha, $v->{own_id};
+      }
       $prev_title = $v->{sha};
       rmtree TMP_ZIP_DIR;
       $v = $edges{$v->{zip}};
@@ -359,3 +379,12 @@ if ($needAuthorTable) {
    }
    close FILE;
 }
+
+if (%fix_sqls) {
+   print "fix_inserts.sql CREATED!!\n";
+   open FILE, '>fix_inserts.sql' or die $!;
+   print FILE "$_\n" foreach values %fix_sqls;
+   close FILE;
+}
+
+
