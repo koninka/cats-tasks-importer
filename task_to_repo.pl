@@ -219,34 +219,33 @@ print_failed_zips;
 #-----------------------------------------------------------------
 CATS::DB::sql_disconnect;
 my %used_titles = ();
-my @ids = ();
 sub set_repo_id {
-   my ($v, $amount, $depth) = @_;
-   $v->{err} = [];
-   $v->{res_id} = $v->{own_id} = undef;
-   if (exists $db_tasks{$v->{sha}}) {
-      $used_titles{$v->{sha}} = 1;
-      $amount++;
-      push @{$v->{err}}, 1 if @{$db_tasks{$v->{sha}}} > 1; #"There is more than one id for $v->{zip}"
-      $v->{own_id} = $db_tasks{$v->{sha}}->[0];
-   }
-   push @ids, $v->{own_id} if defined $v->{own_id} && !($v->{own_id} ~~ @ids);
-   if (!exists $edges{$v->{zip}}) {
-      $v->{res_id} = $v->{own_id};
-      print "Recursion too deep for '$titles{$v->{sha}}', id=" . ($v->{own_id} // '?') . ", zip=P$v->{zip}}\n" if $depth >= 100;
-      push @{$v->{err}}, 2 if @ids > 1; #много входов из таблицы problems в цепочку истории
-      push @{$v->{err}}, 3 if !$amount; #нету входов из таблицы задач
-      push @{$v->{err}}, 4 if !exists $db_tasks{$v->{sha}}; #нету айди для последней задачи в цепочке
-   } else {
-      $v->{res_id} = set_repo_id($edges{$v->{zip}}, $amount, $depth + 1);
-   }
+   my ($v) = @_;
+   my $amount = 0;
+   my @ids = ();
+   my @vertexes = ();
+   do {
+      $v = $edges{$v->{zip}} if @vertexes;
+      push @vertexes, $v;
+      $v->{err} = [];
+      $v->{res_id} = $v->{own_id} = undef;
+      if (exists $db_tasks{$v->{sha}}) {
+         $used_titles{$v->{sha}} = 1;
+         $amount++;
+         push @{$v->{err}}, 1 if @{$db_tasks{$v->{sha}}} > 1; #"There is more than one id for $v->{zip}"
+         $v->{own_id} = $db_tasks{$v->{sha}}->[0];
+      }
+      push @ids, $v->{own_id} if defined $v->{own_id} && !($v->{own_id} ~~ @ids);
+   } while (exists $edges{$v->{zip}});
+   push @{$v->{err}}, 2 if @ids > 1; #много входов из таблицы problems в цепочку истории
+   push @{$v->{err}}, 3 if !$amount; #нету входов из таблицы задач
+   push @{$v->{err}}, 4 if !exists $db_tasks{$v->{sha}}; #нету айди для последней задачи в цепочке
+   my $res_id = $v->{own_id};
+   $_->{res_id} = $res_id foreach @vertexes;
    return $v->{res_id};
 }
 
-foreach (@start_v) {
-   @ids = ();
-   $_->{res_id} = set_repo_id($_, 0, 0)
-}
+set_repo_id($_) foreach (@start_v);
 
 my $good_amount = 0;
 my $total_err_amount = 0;
