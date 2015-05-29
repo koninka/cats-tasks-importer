@@ -60,15 +60,6 @@ sub get_zip_hash {
    print @m;
 }
 
-sub extract_zip {
-   my $zip = Archive::Zip->new();
-   $zip->read($_[0]) == AZ_OK or error("can't read");
-   my @xml_members = $zip->membersMatching('.*\.xml$');
-   error('*.xml not found') if !@xml_members;
-   error('found several *.xml in archive') if @xml_members > 1;
-   $zip->extractTree('', TMP_ZIP_DIR) == AZ_OK or error("can't extract");
-}
-
 #-----------------------------------------------------------------
 #----------------------GET ALL TASKS FROM DB----------------------
 #-----------------------------------------------------------------
